@@ -123,7 +123,8 @@
         "y": 640,
         "wires": [
             [
-                "8b06977ff2da78fe"
+                "8b06977ff2da78fe",
+                "879c08a88a11099c"
             ]
         ]
     },
@@ -222,6 +223,148 @@
         "x": 940,
         "y": 380,
         "wires": []
+    },
+    {
+        "id": "7911253a43159fcc",
+        "type": "mqtt in",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "",
+        "topic": "home/+/status",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "0be9f07a505a70fe",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 90,
+        "y": 760,
+        "wires": [
+            [
+                "a0dbad69cf9fdf9d"
+            ]
+        ]
+    },
+    {
+        "id": "a0dbad69cf9fdf9d",
+        "type": "switch",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "",
+        "property": "payload.status",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "offline",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 1,
+        "x": 300,
+        "y": 760,
+        "wires": [
+            [
+                "b38b72163d7fa16d"
+            ]
+        ]
+    },
+    {
+        "id": "b38b72163d7fa16d",
+        "type": "function",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "Create Offline Alert",
+        "func": "\nmsg.payload = {\n    severity: \"warning\",\n    alert_type: \"device_offline\",\n    message: `Simulator offline: ${msg.topic}`,\n    timestamp: new Date().toISOString()\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 510,
+        "y": 760,
+        "wires": [
+            [
+                "d15342c6f68648c5",
+                "9468e363094913c1"
+            ]
+        ]
+    },
+    {
+        "id": "d15342c6f68648c5",
+        "type": "debug",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "Offline Alert Debug",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 730,
+        "y": 760,
+        "wires": []
+    },
+    {
+        "id": "9468e363094913c1",
+        "type": "function",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "Format alert for InfluxDB",
+        "func": "\nconst alert = msg.payload;\nconst topicParts = msg.topic.split(\"/\");\n\nmsg.payload = [\n    {\n        message: alert.message\n    },\n    {\n        severity: alert.severity,\n        alert_type: alert.alert_type,\n        room: topicParts[1]\n    }\n];\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 470,
+        "y": 880,
+        "wires": [
+            [
+                "e57bc66946b21fb1"
+            ]
+        ]
+    },
+    {
+        "id": "e57bc66946b21fb1",
+        "type": "influxdb out",
+        "z": "5e19ed0d7bbe1aa9",
+        "influxdb": "bc97a93b45f67266",
+        "name": "",
+        "measurement": "alerts",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "home-automation",
+        "bucket": "home_telemetry",
+        "x": 790,
+        "y": 860,
+        "wires": []
+    },
+    {
+        "id": "879c08a88a11099c",
+        "type": "function",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "Create high temperature alert",
+        "func": "\nconst temperature = Number(msg.payload?.value);\n\nif (Number.isNaN(temperature)) {\n    return null;\n}\n\nconst wasHigh = context.get(\"temperatureHigh\") || false;\n\n// Create one alert when temperature crosses 28 °C.\nif (temperature >= 28 && !wasHigh) {\n    context.set(\"temperatureHigh\", true);\n\n    msg.payload = {\n        severity: \"warning\",\n        alert_type: \"high_temperature\",\n        message: `High temperature detected: ${temperature} °C`,\n        timestamp: new Date().toISOString()\n    };\n\n    return msg;\n}\n\n// Reset only after the room has cooled sufficiently.\nif (temperature <= 27 && wasHigh) {\n    context.set(\"temperatureHigh\", false);\n}\n\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 180,
+        "y": 900,
+        "wires": [
+            [
+                "9468e363094913c1"
+            ]
+        ]
     },
     {
         "id": "ded989fbbdb028ff",
@@ -378,7 +521,38 @@
         "rejectUnauthorized": true
     },
     {
-        "id": "cded87d7a35e5639",
+        "id": "0be9f07a505a70fe",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "localhost",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "005d03e54d25efd1",
         "type": "global-config",
         "env": [],
         "modules": {

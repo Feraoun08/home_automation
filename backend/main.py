@@ -20,8 +20,8 @@ INFLUX_TOKEN = os.environ["INFLUX_TOKEN"]
 INFLUX_ORG = os.environ["INFLUX_ORG"]
 INFLUX_BUCKET = os.environ["INFLUX_BUCKET"]
 
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 ROOM = "living_room"
 ALLOWED_DEVICES = {"light", "fan"}
 websocket_clients = set()
@@ -217,7 +217,45 @@ def get_reading_history(minutes: int = 30):
     points = sorted(points_by_time.values(), key=lambda point: point["timestamp"])
 
     return {"points": points}
+@app.get("/api/alerts")
+def get_alerts(limit: int = 20):
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 100",
+        )
 
+    query = f'''
+    from(bucket: "{INFLUX_BUCKET}")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._measurement == "alerts")
+        |> filter(fn: (r) => r._field == "message")
+        |> sort(columns: ["_time"], desc: true)
+        |> limit(n: {limit})
+    '''
+
+    alerts = []
+
+    with InfluxDBClient(
+        url=INFLUX_URL,
+        token=INFLUX_TOKEN,
+        org=INFLUX_ORG,
+    ) as client:
+        tables = client.query_api().query(query=query, org=INFLUX_ORG)
+
+        for table in tables:
+            for record in table.records:
+                alerts.append(
+                    {
+                        "message": record.get_value(),
+                        "severity": record.values.get("severity", "warning"),
+                        "alert_type": record.values.get("alert_type"),
+                        "room": record.values.get("room"),
+                        "timestamp": record.get_time().isoformat(),
+                    }
+                )
+
+    return {"alerts": alerts}
 @app.post("/api/devices/{device_name}/commands")
 def send_device_command(device_name: str, command: DeviceCommand):
     if device_name not in ALLOWED_DEVICES:
