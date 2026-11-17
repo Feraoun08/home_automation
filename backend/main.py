@@ -1,5 +1,9 @@
+
+import asyncio
 import json
 import os
+import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -8,10 +12,13 @@ import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from influxdb_client import InfluxDBClient
-import asyncio
-from contextlib import asynccontextmanager
+from pydantic import BaseModel
+
+
+
+# Configuration
+
 
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -22,9 +29,49 @@ INFLUX_BUCKET = os.environ["INFLUX_BUCKET"]
 
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-ROOM = "living_room"
-ALLOWED_DEVICES = {"light", "fan"}
+
+ALLOWED_DEVICES = {
+    "light",
+    "fan",
+    "tv",
+    "ventilation",
+    "exhaust_fan",
+}
+
 websocket_clients = set()
+
+
+
+# Helpers
+
+
+def validate_room_id(room_id: str | None):
+    if room_id is not None and not re.fullmatch(r"[a-zA-Z0-9_-]+", room_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid room_id",
+        )
+
+
+def room_filter(room_id: str | None):
+    validate_room_id(room_id)
+
+    if room_id:
+        return f'|> filter(fn: (r) => r.room == "{room_id}")'
+
+    return ""
+
+
+def get_influx_client():
+    return InfluxDBClient(
+        url=INFLUX_URL,
+        token=INFLUX_TOKEN,
+        org=INFLUX_ORG,
+    )
+
+
+
+# WebSocket broadcasting
 
 
 async def broadcast_event(event):
@@ -37,6 +84,10 @@ async def broadcast_event(event):
             disconnected_clients.add(websocket)
 
     websocket_clients.difference_update(disconnected_clients)
+
+
+
+# MQTT lifecycle
 
 
 @asynccontextmanager
@@ -60,7 +111,8 @@ async def lifespan(app: FastAPI):
                 broadcast_event(event),
                 event_loop,
             )
-        except json.JSONDecodeError:
+
+        except (json.JSONDecodeError, UnicodeDecodeError):
             print(f"Ignored invalid JSON on {message.topic}")
 
     mqtt_client.on_connect = on_connect
@@ -75,6 +127,11 @@ async def lifespan(app: FastAPI):
         mqtt_client.disconnect()
         mqtt_client.loop_stop()
 
+
+
+# FastAPI application
+
+
 app = FastAPI(
     title="Home Automation API",
     lifespan=lifespan,
@@ -88,8 +145,18 @@ app.add_middleware(
 )
 
 
+
+# Models
+
+
 class DeviceCommand(BaseModel):
     state: Literal["on", "off"]
+    room_id: str
+    device_id: str | None = None
+
+
+
+# WebSocket
 
 
 @app.websocket("/ws/events")
@@ -100,8 +167,13 @@ async def mqtt_event_stream(websocket: WebSocket):
     try:
         while True:
             await websocket.receive_text()
+
     except WebSocketDisconnect:
         websocket_clients.discard(websocket)
+
+
+
+# Health
 
 
 @app.get("/api/health")
@@ -109,14 +181,21 @@ def health():
     return {"status": "ok"}
 
 
+
+# Latest readings and device states
+
+
 @app.get("/api/readings/latest")
-def get_latest_readings():
+def get_latest_readings(room_id: str | None = None):
+    room_clause = room_filter(room_id)
+
     sensor_query = f'''
     from(bucket: "{INFLUX_BUCKET}")
         |> range(start: -1h)
         |> filter(fn: (r) => r._measurement == "sensor_reading")
         |> filter(fn: (r) => r._field == "value")
-        |> group(columns: ["room", "sensor_type", "device_id", "unit"])
+        {room_clause}
+        |> group(columns: ["room", "sensor_type", "sensor_id", "unit"])
         |> last()
     '''
 
@@ -125,6 +204,7 @@ def get_latest_readings():
         |> range(start: -1h)
         |> filter(fn: (r) => r._measurement == "device_state")
         |> filter(fn: (r) => r._field == "is_on")
+        {room_clause}
         |> group(columns: ["room", "device_name", "device_id"])
         |> last()
     '''
@@ -132,51 +212,62 @@ def get_latest_readings():
     readings = []
     devices = []
 
-    with InfluxDBClient(
-        url=INFLUX_URL,
-        token=INFLUX_TOKEN,
-        org=INFLUX_ORG,
-    ) as client:
+    with get_influx_client() as client:
         query_api = client.query_api()
 
-        sensor_tables = query_api.query(query=sensor_query, org=INFLUX_ORG)
+        sensor_tables = query_api.query(
+            query=sensor_query,
+            org=INFLUX_ORG,
+        )
+
         for table in sensor_tables:
             for record in table.records:
-                readings.append(
-                    {
-                        "room": record.values.get("room"),
-                        "sensor_type": record.values.get("sensor_type"),
-                        "device_id": record.values.get("device_id"),
-                        "unit": record.values.get("unit"),
-                        "value": record.get_value(),
-                        "timestamp": record.get_time().isoformat(),
-                    }
-                )
+                readings.append({
+                    "room": record.values.get("room"),
+                    "sensor_type": record.values.get("sensor_type"),
+                    "sensor_id": record.values.get("sensor_id"),
+                    "unit": record.values.get("unit"),
+                    "value": record.get_value(),
+                    "timestamp": record.get_time().isoformat(),
+                })
 
-        device_tables = query_api.query(query=device_query, org=INFLUX_ORG)
+        device_tables = query_api.query(
+            query=device_query,
+            org=INFLUX_ORG,
+        )
+
         for table in device_tables:
             for record in table.records:
-                devices.append(
-                    {
-                        "room": record.values.get("room"),
-                        "device_name": record.values.get("device_name"),
-                        "device_id": record.values.get("device_id"),
-                        "state": "on" if record.get_value() == 1 else "off",
-                        "timestamp": record.get_time().isoformat(),
-                    }
-                )
+                devices.append({
+                    "room": record.values.get("room"),
+                    "device_name": record.values.get("device_name"),
+                    "device_id": record.values.get("device_id"),
+                    "state": "on" if record.get_value() == 1 else "off",
+                    "timestamp": record.get_time().isoformat(),
+                })
 
     return {
         "readings": readings,
         "devices": devices,
     }
+
+
+
+# Historical readings
+
+
 @app.get("/api/readings/history")
-def get_reading_history(minutes: int = 30):
+def get_reading_history(
+    minutes: int = 30,
+    room_id: str | None = None,
+):
     if minutes < 1 or minutes > 1440:
         raise HTTPException(
             status_code=400,
             detail="minutes must be between 1 and 1440",
         )
+
+    room_clause = room_filter(room_id)
 
     query = f'''
     from(bucket: "{INFLUX_BUCKET}")
@@ -187,26 +278,36 @@ def get_reading_history(minutes: int = 30):
             r.sensor_type == "temperature" or
             r.sensor_type == "humidity"
         )
+        {room_clause}
         |> sort(columns: ["_time"])
     '''
 
     points_by_time = {}
 
-    with InfluxDBClient(
-        url=INFLUX_URL,
-        token=INFLUX_TOKEN,
-        org=INFLUX_ORG,
-    ) as client:
-        tables = client.query_api().query(query=query, org=INFLUX_ORG)
+    with get_influx_client() as client:
+        tables = client.query_api().query(
+            query=query,
+            org=INFLUX_ORG,
+        )
 
         for table in tables:
             for record in table.records:
-                timestamp = record.get_time().replace(microsecond=0).isoformat()
+                timestamp = (
+                    record.get_time()
+                    .replace(microsecond=0)
+                    .isoformat()
+                )
+
                 sensor_type = record.values.get("sensor_type")
+                room = record.values.get("room")
+
+                # Keep readings from different rooms separate.
+                key = (room, timestamp)
 
                 point = points_by_time.setdefault(
-                    timestamp,
+                    key,
                     {
+                        "room": room,
                         "timestamp": timestamp,
                         "time": record.get_time().strftime("%H:%M:%S"),
                     },
@@ -214,55 +315,85 @@ def get_reading_history(minutes: int = 30):
 
                 point[sensor_type] = float(record.get_value())
 
-    points = sorted(points_by_time.values(), key=lambda point: point["timestamp"])
+    points = sorted(
+        points_by_time.values(),
+        key=lambda point: point["timestamp"],
+    )
 
     return {"points": points}
+
+
+
+# Alerts
+
+
 @app.get("/api/alerts")
-def get_alerts(limit: int = 20):
+def get_alerts(limit: int = 20, room_id: str | None = None):
     if limit < 1 or limit > 100:
         raise HTTPException(
             status_code=400,
             detail="limit must be between 1 and 100",
         )
 
+    room_clause = room_filter(room_id)
+
     query = f'''
     from(bucket: "{INFLUX_BUCKET}")
         |> range(start: -24h)
         |> filter(fn: (r) => r._measurement == "alerts")
         |> filter(fn: (r) => r._field == "message")
+        {room_clause}
         |> sort(columns: ["_time"], desc: true)
         |> limit(n: {limit})
     '''
 
     alerts = []
 
-    with InfluxDBClient(
-        url=INFLUX_URL,
-        token=INFLUX_TOKEN,
-        org=INFLUX_ORG,
-    ) as client:
-        tables = client.query_api().query(query=query, org=INFLUX_ORG)
+    with get_influx_client() as client:
+        tables = client.query_api().query(
+            query=query,
+            org=INFLUX_ORG,
+        )
 
         for table in tables:
             for record in table.records:
-                alerts.append(
-                    {
-                        "message": record.get_value(),
-                        "severity": record.values.get("severity", "warning"),
-                        "alert_type": record.values.get("alert_type"),
-                        "room": record.values.get("room"),
-                        "timestamp": record.get_time().isoformat(),
-                    }
-                )
+                alerts.append({
+                    "message": record.get_value(),
+                    "severity": record.values.get("severity", "warning"),
+                    "alert_type": record.values.get("alert_type"),
+                    "room": record.values.get("room"),
+                    "timestamp": record.get_time().isoformat(),
+                })
 
     return {"alerts": alerts}
-@app.post("/api/devices/{device_name}/commands")
-def send_device_command(device_name: str, command: DeviceCommand):
-    if device_name not in ALLOWED_DEVICES:
-        raise HTTPException(status_code=404, detail="Unknown device")
 
-    topic = f"home/{ROOM}/device/{device_name}/command"
+
+
+# Device commands
+
+
+@app.post("/api/devices/{device_name}/commands")
+def send_device_command(
+    device_name: str,
+    command: DeviceCommand,
+):
+    if device_name not in ALLOWED_DEVICES:
+        raise HTTPException(
+            status_code=404,
+            detail="Unknown device",
+        )
+
+    validate_room_id(command.room_id)
+
+    topic = (
+        f"home/{command.room_id}/device/"
+        f"{device_name}/command"
+    )
+
     payload = {
+        "room_id": command.room_id,
+        "device_type": device_name,
+        "device_id": command.device_id,
         "state": command.state,
         "source": "dashboard",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -274,7 +405,12 @@ def send_device_command(device_name: str, command: DeviceCommand):
         client.connect(MQTT_HOST, MQTT_PORT, 60)
         client.loop_start()
 
-        published = client.publish(topic, json.dumps(payload), qos=1)
+        published = client.publish(
+            topic,
+            json.dumps(payload),
+            qos=1,
+        )
+
         published.wait_for_publish(timeout=5)
 
         if not published.is_published():
@@ -292,6 +428,8 @@ def send_device_command(device_name: str, command: DeviceCommand):
 
     return {
         "status": "published",
+        "room": command.room_id,
         "device": device_name,
+        "device_id": command.device_id,
         "state": command.state,
     }

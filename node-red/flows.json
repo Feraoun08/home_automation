@@ -12,7 +12,7 @@
         "type": "mqtt in",
         "z": "5e19ed0d7bbe1aa9",
         "name": "",
-        "topic": "home/living_room/#",
+        "topic": "home/#",
         "qos": "2",
         "datatype": "auto-detect",
         "broker": "ded989fbbdb028ff",
@@ -20,13 +20,14 @@
         "rap": true,
         "rh": 0,
         "inputs": 0,
-        "x": 230,
+        "x": 190,
         "y": 340,
         "wires": [
             [
                 "84974b537ecfe604",
                 "aa96a3ee27cc897a",
-                "daa89ad559bbc129"
+                "daa89ad559bbc129",
+                "f64821a9b41f85fb"
             ]
         ]
     },
@@ -60,8 +61,8 @@
         "rap": true,
         "rh": 0,
         "inputs": 0,
-        "x": 180,
-        "y": 520,
+        "x": 140,
+        "y": 560,
         "wires": [
             [
                 "e2cff44796c084ad"
@@ -80,8 +81,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 530,
-        "y": 500,
+        "x": 510,
+        "y": 580,
         "wires": [
             [
                 "2af9e7cca6b610eb"
@@ -111,7 +112,7 @@
         "type": "mqtt in",
         "z": "5e19ed0d7bbe1aa9",
         "name": "",
-        "topic": "home/living_room/sensor/temperature",
+        "topic": "home/+/sensor/temperature",
         "qos": "2",
         "datatype": "auto-detect",
         "broker": "b3b495f00acac641",
@@ -119,7 +120,7 @@
         "rap": true,
         "rh": 0,
         "inputs": 0,
-        "x": 210,
+        "x": 180,
         "y": 640,
         "wires": [
             [
@@ -153,7 +154,7 @@
         "type": "function",
         "z": "5e19ed0d7bbe1aa9",
         "name": "Format sensor reading for InfluxDB",
-        "func": "\nconst topicParts = msg.topic.split(\"/\");\n\n// Store sensor messages only.\nif (topicParts.length !== 4 || topicParts[2] !== \"sensor\") {\n    return null;\n}\n\nconst reading = msg.payload;\n\nif (!reading || typeof reading.value === \"undefined\") {\n    return null;\n}\n\nconst sensorType = topicParts[3];\n\n// InfluxDB uses one numeric field called \"value\".\n// Presence becomes 1 (present) or 0 (absent).\nconst numericValue =\n    sensorType === \"presence\"\n        ? (reading.value ? 1 : 0)\n        : Number(reading.value);\n\nif (Number.isNaN(numericValue)) {\n    return null;\n}\n\nmsg.payload = [\n    {\n        value: numericValue\n    },\n    {\n        room: topicParts[1],\n        sensor_type: sensorType,\n        device_id: reading.device_id,\n        unit: reading.unit\n    }\n];\n\nreturn msg;",
+        "func": "const topicParts = msg.topic.split(\"/\");\n\n// Expected topic:\n// home/{room_id}/sensor/{sensor_type}\nif (\n    topicParts.length !== 4 ||\n    topicParts[0] !== \"home\" ||\n    topicParts[2] !== \"sensor\"\n) {\n    return null;\n}\n\nconst roomId = topicParts[1];\nconst sensorType = topicParts[3];\nconst reading = msg.payload;\n\nif (\n    !reading ||\n    !reading.house_id ||\n    !reading.sensor_id ||\n    reading.room_id !== roomId ||\n    reading.sensor_type !== sensorType ||\n    typeof reading.value === \"undefined\"\n) {\n    node.warn(`Invalid sensor payload on ${msg.topic}`);\n    return null;\n}\n\nconst numericValue =\n    sensorType === \"presence\"\n        ? (reading.value ? 1 : 0)\n        : Number(reading.value);\n\nif (Number.isNaN(numericValue)) {\n    node.warn(`Invalid sensor value on ${msg.topic}`);\n    return null;\n}\n\nmsg.payload = [\n    {\n        value: numericValue\n    },\n    {\n        house_id: reading.house_id,\n        room: roomId,\n        sensor_type: sensorType,\n        sensor_id: reading.sensor_id,\n        unit: reading.unit || \"\"\n    }\n];\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -191,7 +192,7 @@
         "type": "function",
         "z": "5e19ed0d7bbe1aa9",
         "name": "Format device state for InfluxDB",
-        "func": "\nconst topicParts = msg.topic.split(\"/\");\n\n// Expected topic:\n// home/living_room/device/light/state\nif (\n    topicParts.length !== 5 ||\n    topicParts[2] !== \"device\" ||\n    topicParts[4] !== \"state\"\n) {\n    return null;\n}\n\nconst deviceName = topicParts[3];\nconst deviceState = msg.payload?.state;\n\nif (deviceState !== \"on\" && deviceState !== \"off\") {\n    return null;\n}\n\nmsg.payload = [\n    {\n        is_on: deviceState === \"on\" ? 1 : 0\n    },\n    {\n        room: topicParts[1],\n        device_name: deviceName,\n        device_id: msg.payload.device_id\n    }\n];\n\nreturn msg;",
+        "func": "const topicParts = msg.topic.split(\"/\");\n\n// Expected topic:\n// home/{room_id}/device/{device_type}/state\nif (\n    topicParts.length !== 5 ||\n    topicParts[0] !== \"home\" ||\n    topicParts[2] !== \"device\" ||\n    topicParts[4] !== \"state\"\n) {\n    return null;\n}\n\nconst roomId = topicParts[1];\nconst deviceType = topicParts[3];\nconst device = msg.payload;\n\nif (\n    !device ||\n    !device.house_id ||\n    !device.device_id ||\n    device.room_id !== roomId ||\n    device.device_type !== deviceType ||\n    ![\"on\", \"off\"].includes(device.state)\n) {\n    node.warn(`Invalid device-state payload on ${msg.topic}`);\n    return null;\n}\n\nmsg.payload = [\n    {\n        is_on: device.state === \"on\" ? 1 : 0\n    },\n    {\n        house_id: device.house_id,\n        room: roomId,\n        device_name: deviceType,\n        device_type: deviceType,\n        device_id: device.device_id\n    }\n];\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -351,20 +352,136 @@
         "type": "function",
         "z": "5e19ed0d7bbe1aa9",
         "name": "Create high temperature alert",
-        "func": "\nconst temperature = Number(msg.payload?.value);\n\nif (Number.isNaN(temperature)) {\n    return null;\n}\n\nconst wasHigh = context.get(\"temperatureHigh\") || false;\n\n// Create one alert when temperature crosses 28 °C.\nif (temperature >= 28 && !wasHigh) {\n    context.set(\"temperatureHigh\", true);\n\n    msg.payload = {\n        severity: \"warning\",\n        alert_type: \"high_temperature\",\n        message: `High temperature detected: ${temperature} °C`,\n        timestamp: new Date().toISOString()\n    };\n\n    return msg;\n}\n\n// Reset only after the room has cooled sufficiently.\nif (temperature <= 27 && wasHigh) {\n    context.set(\"temperatureHigh\", false);\n}\n\nreturn null;",
+        "func": "\nconst parts = (msg.topic || \"\").split(\"/\");\n\nif (\n    parts.length !== 4 ||\n    parts[0] !== \"home\" ||\n    parts[2] !== \"sensor\" ||\n    parts[3] !== \"temperature\"\n) {\n    return null;\n}\n\nconst roomId = parts[1];\nconst temperature = Number(msg.payload?.value);\n\nif (!Number.isFinite(temperature)) {\n    return null;\n}\n\nconst wasHigh = context.get(`temperatureHigh:${roomId}`) || false;\n\nif (temperature >= 26 && !wasHigh) {\n    context.set(`temperatureHigh:${roomId}`, true);\n\n    msg.payload = {\n        severity: \"warning\",\n        alert_type: \"high_temperature\",\n        room_id: roomId,\n        message: `High temperature in ${roomId}: ${temperature} °C`,\n        timestamp: new Date().toISOString()\n    };\n\n    return msg;\n}\n\nif (temperature <= 23 && wasHigh) {\n    context.set(`temperatureHigh:${roomId}`, false);\n}\n\nreturn null;\n",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 180,
+        "x": 200,
         "y": 900,
         "wires": [
             [
                 "9468e363094913c1"
             ]
         ]
+    },
+    {
+        "id": "f5fbf50e83e2951b",
+        "type": "mqtt in",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "",
+        "topic": "home/+/status",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "ded989fbbdb028ff",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 130,
+        "y": 180,
+        "wires": [
+            [
+                "1d65b19ec3f1d41e"
+            ]
+        ]
+    },
+    {
+        "id": "1d65b19ec3f1d41e",
+        "type": "function",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "Cache room capabilities",
+        "func": "const topicParts = msg.topic.split(\"/\");\n\n// Ignore home/system/status.\n// Keep only home/{room_id}/status.\nif (\n    topicParts.length !== 3 ||\n    topicParts[0] !== \"home\" ||\n    topicParts[2] !== \"status\"\n) {\n    return null;\n}\n\nconst roomId = topicParts[1];\nconst status = msg.payload;\n\nif (\n    roomId === \"system\" ||\n    !status ||\n    status.room_id !== roomId ||\n    !status.house_id\n) {\n    return null;\n}\n\nconst rooms = flow.get(\"roomCapabilities\") || {};\n\nrooms[roomId] = {\n    house_id: status.house_id,\n    room_name: status.room_name,\n    sensor_types: status.sensor_types || [],\n    devices: status.devices || [],\n    online: status.status === \"online\",\n    updated_at: status.timestamp\n};\n\nflow.set(\"roomCapabilities\", rooms);\n\nmsg.payload = {\n    event: \"room_capabilities_cached\",\n    room_id: roomId,\n    room_name: status.room_name,\n    devices: status.devices || []\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 180,
+        "wires": [
+            [
+                "ce4856e03c8ebbcb"
+            ]
+        ]
+    },
+    {
+        "id": "ce4856e03c8ebbcb",
+        "type": "debug",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "Room capabilities debug",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 790,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "f64821a9b41f85fb",
+        "type": "function",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "Room-aware automation",
+        "func": "\nconst parts = (msg.topic || \"\").split(\"/\");\n\n// Only process: home/{room_id}/sensor/{sensor_type}\nif (\n    parts.length !== 4 ||\n    parts[0] !== \"home\" ||\n    parts[2] !== \"sensor\"\n) {\n    return null;\n}\n\nconst roomId = parts[1];\nconst sensorType = parts[3];\nconst reading = msg.payload;\n\nif (\n    !reading ||\n    !reading.house_id ||\n    !reading.sensor_id ||\n    reading.room_id !== roomId ||\n    reading.sensor_type !== sensorType ||\n    reading.value === undefined\n) {\n    node.warn(`Invalid automation event: ${msg.topic}`);\n    return null;\n}\n\n// Get capabilities cached by \"Cache room capabilities\".\nconst rooms = flow.get(\"roomCapabilities\") || {};\nconst room = rooms[roomId];\n\nif (\n    !room ||\n    !room.online ||\n    room.house_id !== reading.house_id ||\n    !Array.isArray(room.sensor_types) ||\n    !room.sensor_types.includes(sensorType)\n) {\n    return null;\n}\n\nlet targetType = null;\nlet desiredState = null;\n\n// Rule 1: Presence -> Light ON\nif (sensorType === \"presence\") {\n    if (reading.value === true) {\n        targetType = \"light\";\n        desiredState = \"on\";\n    }\n}\n\n// Rule 2: Temperature -> Fan\nelse if (sensorType === \"temperature\") {\n    const temperature = Number(reading.value);\n\n    if (!Number.isFinite(temperature)) {\n        return null;\n    }\n\n    if (temperature >= 28) {\n        targetType = \"fan\";\n        desiredState = \"on\";\n    } else if (temperature <= 24) {\n        targetType = \"fan\";\n        desiredState = \"off\";\n    }\n}\n\nif (!targetType || !desiredState) {\n    return null;\n}\n\n// Find the device in this room only.\nconst targetDevice = room.devices.find(\n    device => device.type === targetType\n);\n\nif (!targetDevice) {\n    return null;\n}\n\n// Avoid repeating an identical command.\nconst commandKey = `${roomId}:${targetDevice.id}`;\nconst lastCommands = context.get(\"lastCommands\") || {};\n\nif (lastCommands[commandKey] === desiredState) {\n    return null;\n}\n\nlastCommands[commandKey] = desiredState;\ncontext.set(\"lastCommands\", lastCommands);\n\n// Send a command to the simulator through MQTT.\nmsg.topic = `home/${roomId}/device/${targetType}/command`;\n\nmsg.payload = JSON.stringify({\n    house_id: room.house_id,\n    room_id: roomId,\n    device_id: targetDevice.id,\n    device_type: targetType,\n    state: desiredState,\n    source: \"node-red-automation\",\n    timestamp: new Date().toISOString()\n});\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 550,
+        "y": 500,
+        "wires": [
+            [
+                "2af9e7cca6b610eb"
+            ]
+        ]
+    },
+    {
+        "id": "652affb94c79b2ac",
+        "type": "mqtt in",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "",
+        "topic": "home/+/device/+/command",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "ded989fbbdb028ff",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 170,
+        "y": 1060,
+        "wires": [
+            [
+                "12a0127db9a80b9f"
+            ]
+        ]
+    },
+    {
+        "id": "12a0127db9a80b9f",
+        "type": "debug",
+        "z": "5e19ed0d7bbe1aa9",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 620,
+        "y": 1080,
+        "wires": []
     },
     {
         "id": "ded989fbbdb028ff",
@@ -552,7 +669,7 @@
         "sessionExpiry": ""
     },
     {
-        "id": "005d03e54d25efd1",
+        "id": "336ecef9c73cb3a7",
         "type": "global-config",
         "env": [],
         "modules": {

@@ -1,0 +1,198 @@
+{
+  "house": {
+    "id": "demo_house",
+    "name": "Demo Smart Home"
+  },
+  "simulation": {
+    "publish_interval_seconds": 5
+  },
+  "rooms": [
+    {
+      "id": "living_room",
+      "name": "Living Room",
+      "sensors": [
+        {
+          "id": "living-room-temp-01",
+          "type": "temperature",
+          "unit": "C"
+        },
+        {
+          "id": "living-room-humidity-01",
+          "type": "humidity",
+          "unit": "%"
+        },
+        {
+          "id": "living-room-presence-01",
+          "type": "presence",
+          "unit": "boolean"
+        }
+      ],
+      "devices": [
+        {
+          "id": "living-room-light-01",
+          "type": "light",
+          "initial_state": "off"
+        },
+        {
+          "id": "living-room-fan-01",
+          "type": "fan",
+          "initial_state": "off",
+          "effects": {
+            "temperature_delta": [-0.7, -0.4]
+          }
+        },
+        {
+          "id": "living-room-tv-01",
+          "type": "tv",
+          "initial_state": "off"
+        }
+      ],
+      "profile": {
+        "temperature": {
+          "initial": 29.0,
+          "minimum": 18.0,
+          "maximum": 32.0,
+          "idle_delta": [0.15, 0.45]
+        },
+        "humidity": {
+          "initial": 45.0,
+          "minimum": 30.0,
+          "maximum": 70.0,
+          "idle_delta": [-1.0, 1.0]
+        },
+        "presence": {
+          "toggle_every_seconds": 15
+        }
+      }
+    },
+    {
+      "id": "bedroom",
+      "name": "Bedroom",
+      "sensors": [
+        {
+          "id": "bedroom-temp-01",
+          "type": "temperature",
+          "unit": "C"
+        },
+        {
+          "id": "bedroom-presence-01",
+          "type": "presence",
+          "unit": "boolean"
+        }
+      ],
+      "devices": [
+        {
+          "id": "bedroom-light-01",
+          "type": "light",
+          "initial_state": "off"
+        },
+        {
+          "id": "bedroom-fan-01",
+          "type": "fan",
+          "initial_state": "off",
+          "effects": {
+            "temperature_delta": [-0.5, -0.2]
+          }
+        }
+      ],
+      "profile": {
+        "temperature": {
+          "initial": 23.0,
+          "minimum": 17.0,
+          "maximum": 29.0,
+          "idle_delta": [0.05, 0.25]
+        },
+        "presence": {
+          "toggle_every_seconds": 25
+        }
+      }
+    },
+    {
+      "id": "kitchen",
+      "name": "Kitchen",
+      "sensors": [
+        {
+          "id": "kitchen-temp-01",
+          "type": "temperature",
+          "unit": "C"
+        },
+        {
+          "id": "kitchen-humidity-01",
+          "type": "humidity",
+          "unit": "%"
+        }
+      ],
+      "devices": [
+        {
+          "id": "kitchen-light-01",
+          "type": "light",
+          "initial_state": "off"
+        },
+        {
+          "id": "kitchen-ventilation-01",
+          "type": "ventilation",
+          "initial_state": "off",
+          "effects": {
+            "humidity_delta": [-2.0, -1.0]
+          }
+        }
+      ],
+      "profile": {
+        "temperature": {
+          "initial": 26.0,
+          "minimum": 18.0,
+          "maximum": 35.0,
+          "idle_delta": [0.1, 0.3]
+        },
+        "humidity": {
+          "initial": 60.0,
+          "minimum": 35.0,
+          "maximum": 85.0,
+          "idle_delta": [0.0, 1.5]
+        }
+      }
+    },
+    {
+      "id": "bathroom",
+      "name": "Bathroom",
+      "sensors": [
+        {
+          "id": "bathroom-humidity-01",
+          "type": "humidity",
+          "unit": "%"
+        },
+        {
+          "id": "bathroom-presence-01",
+          "type": "presence",
+          "unit": "boolean"
+        }
+      ],
+      "devices": [
+        {
+          "id": "bathroom-light-01",
+          "type": "light",
+          "initial_state": "off"
+        },
+        {
+          "id": "bathroom-exhaust-fan-01",
+          "type": "exhaust_fan",
+          "initial_state": "off",
+          "effects": {
+            "humidity_delta": [-3.0, -1.5]
+          }
+        }
+      ],
+      "profile": {
+        "humidity": {
+          "initial": 70.0,
+          "minimum": 35.0,
+          "maximum": 95.0,
+          "idle_delta": [0.3, 1.0]
+        },
+        "presence": {
+          "toggle_every_seconds": 20
+        }
+      }
+    }
+  ]
+}
