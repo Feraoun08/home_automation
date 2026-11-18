@@ -1,8 +1,7 @@
+
 import { useEffect, useState } from "react";
 
-const ALERTS_URL = "http://localhost:8000/api/alerts";
-
-export default function AlertPanel() {
+export default function AlertPanel({ roomId }) {
   const [alerts, setAlerts] = useState([]);
 
   useEffect(() => {
@@ -10,19 +9,17 @@ export default function AlertPanel() {
 
     async function loadAlerts() {
       try {
-        const response = await fetch(ALERTS_URL);
+        const response = await fetch(
+          `http://localhost:8000/api/alerts?room_id=${roomId}`,
+        );
 
-        if (!response.ok) {
-          throw new Error("Alerts request failed");
-        }
+        if (!response.ok) throw new Error("Alerts request failed");
 
         const data = await response.json();
 
-        if (active) {
-          setAlerts(data.alerts);
-        }
+        if (active) setAlerts(data.alerts || []);
       } catch {
-        // The main dashboard remains available if alerts cannot load.
+        // Keep the dashboard available.
       }
     }
 
@@ -33,7 +30,7 @@ export default function AlertPanel() {
       active = false;
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [roomId]);
 
   return (
     <section className="alerts-section">
@@ -46,20 +43,19 @@ export default function AlertPanel() {
         <p className="no-alerts">No alerts during the last 24 hours.</p>
       ) : (
         <div className="alerts-list">
-          {alerts.map((alert) => (
+          {alerts.map((alert, index) => (
             <article
               className={`alert-card ${alert.severity}`}
-              key={`${alert.timestamp}-${alert.message}`}
+              key={`${alert.timestamp}-${alert.message}-${index}`}
             >
               <div>
                 <p className="alert-title">
-                  {alert.severity.toUpperCase()} · {alert.room}
+                  {(alert.severity || "info").toUpperCase()} ·{" "}
+                  {alert.room || roomId}
                 </p>
                 <p className="alert-message">{alert.message}</p>
               </div>
-              <time>
-                {new Date(alert.timestamp).toLocaleString()}
-              </time>
+              <time>{new Date(alert.timestamp).toLocaleString()}</time>
             </article>
           ))}
         </div>

@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import {
   CartesianGrid,
@@ -16,7 +17,7 @@ const ranges = [
   { label: "24 hours", value: 1440 },
 ];
 
-export default function SensorHistoryChart() {
+export default function SensorHistoryChart({ roomId }) {
   const [points, setPoints] = useState([]);
   const [minutes, setMinutes] = useState(30);
   const [error, setError] = useState("");
@@ -27,23 +28,19 @@ export default function SensorHistoryChart() {
     async function loadHistory() {
       try {
         const response = await fetch(
-          `http://localhost:8000/api/readings/history?minutes=${minutes}`,
+          `http://localhost:8000/api/readings/history?minutes=${minutes}&room_id=${roomId}`,
         );
 
-        if (!response.ok) {
-          throw new Error("History request failed");
-        }
+        if (!response.ok) throw new Error("History request failed");
 
         const data = await response.json();
 
         if (active) {
-          setPoints(data.points);
+          setPoints(data.points || []);
           setError("");
         }
       } catch {
-        if (active) {
-          setError("Unable to load sensor history.");
-        }
+        if (active) setError("Unable to load sensor history.");
       }
     }
 
@@ -54,7 +51,7 @@ export default function SensorHistoryChart() {
       active = false;
       window.clearInterval(intervalId);
     };
-  }, [minutes]);
+  }, [minutes, roomId]);
 
   return (
     <section className="history-section">
@@ -79,6 +76,8 @@ export default function SensorHistoryChart() {
 
       {error ? (
         <p className="error-message">{error}</p>
+      ) : points.length === 0 ? (
+        <p>No historical data available for this room.</p>
       ) : (
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
