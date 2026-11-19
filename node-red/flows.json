@@ -1,6 +1,6 @@
 [
     {
-        "id": "5e19ed0d7bbe1aa9",
+        "id": "8c3bdc4450404a78",
         "type": "tab",
         "label": "Flux 1",
         "disabled": false,
@@ -8,9 +8,9 @@
         "env": []
     },
     {
-        "id": "6535d67a4c81dc8b",
+        "id": "19f63eab1fd472e5",
         "type": "mqtt in",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "",
         "topic": "home/living_room/#",
         "qos": "2",
@@ -24,16 +24,16 @@
         "y": 340,
         "wires": [
             [
-                "84974b537ecfe604",
-                "aa96a3ee27cc897a",
-                "daa89ad559bbc129"
+                "4a3de49b415b4b52",
+                "ad595c9fcc7fa04f",
+                "9e99fab0f1725473"
             ]
         ]
     },
     {
-        "id": "84974b537ecfe604",
+        "id": "4a3de49b415b4b52",
         "type": "debug",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "debug 6",
         "active": true,
         "tosidebar": true,
@@ -48,9 +48,9 @@
         "wires": []
     },
     {
-        "id": "a88c2a6bb75c6967",
+        "id": "ea10e76d20de41d7",
         "type": "mqtt in",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "",
         "topic": "home/living_room/sensor/presence",
         "qos": "2",
@@ -64,14 +64,14 @@
         "y": 520,
         "wires": [
             [
-                "e2cff44796c084ad"
+                "229debf34e1bc206"
             ]
         ]
     },
     {
-        "id": "e2cff44796c084ad",
+        "id": "229debf34e1bc206",
         "type": "function",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Turn on light on presence",
         "func": "if (msg.payload && msg.payload.value === true) {\n    return {\n        topic: \"home/living_room/device/light/command\",\n        payload: JSON.stringify({\n            state: \"on\",\n            source: \"presence_automation\"\n        })\n    };\n}\n\nreturn null;",
         "outputs": 1,
@@ -84,14 +84,14 @@
         "y": 500,
         "wires": [
             [
-                "2af9e7cca6b610eb"
+                "2e77d104418d5478"
             ]
         ]
     },
     {
-        "id": "2af9e7cca6b610eb",
+        "id": "2e77d104418d5478",
         "type": "mqtt out",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "",
         "topic": "",
         "qos": "",
@@ -107,9 +107,9 @@
         "wires": []
     },
     {
-        "id": "0f8ad48bdc196b01",
+        "id": "b6f2c5964870e96c",
         "type": "mqtt in",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "",
         "topic": "home/living_room/sensor/temperature",
         "qos": "2",
@@ -123,15 +123,15 @@
         "y": 640,
         "wires": [
             [
-                "8b06977ff2da78fe",
-                "879c08a88a11099c"
+                "20ddf1ce73032c59",
+                "8d3592580a06fabe"
             ]
         ]
     },
     {
-        "id": "8b06977ff2da78fe",
+        "id": "20ddf1ce73032c59",
         "type": "function",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Control fan by temperature",
         "func": "const temperature = msg.payload?.value;\n\nif (typeof temperature !== \"number\") {\n    return null;\n}\n\nlet requestedState;\n\nif (temperature >= 28) {\n    requestedState = \"on\";\n} else if (temperature <= 24) {\n    requestedState = \"off\";\n} else {\n    return null;\n}\n\n// Avoid sending the same command repeatedly.\nconst lastFanState = context.get(\"lastFanState\");\n\nif (lastFanState === requestedState) {\n    return null;\n}\n\ncontext.set(\"lastFanState\", requestedState);\n\nreturn {\n    topic: \"home/living_room/device/fan/command\",\n    payload: JSON.stringify({\n        state: requestedState,\n        source: \"temperature_automation\",\n        temperature: temperature\n    })\n};",
         "outputs": 1,
@@ -144,14 +144,14 @@
         "y": 640,
         "wires": [
             [
-                "2af9e7cca6b610eb"
+                "2e77d104418d5478"
             ]
         ]
     },
     {
-        "id": "aa96a3ee27cc897a",
+        "id": "ad595c9fcc7fa04f",
         "type": "function",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Format sensor reading for InfluxDB",
         "func": "\nconst topicParts = msg.topic.split(\"/\");\n\n// Store sensor messages only.\nif (topicParts.length !== 4 || topicParts[2] !== \"sensor\") {\n    return null;\n}\n\nconst reading = msg.payload;\n\nif (!reading || typeof reading.value === \"undefined\") {\n    return null;\n}\n\nconst sensorType = topicParts[3];\n\n// InfluxDB uses one numeric field called \"value\".\n// Presence becomes 1 (present) or 0 (absent).\nconst numericValue =\n    sensorType === \"presence\"\n        ? (reading.value ? 1 : 0)\n        : Number(reading.value);\n\nif (Number.isNaN(numericValue)) {\n    return null;\n}\n\nmsg.payload = [\n    {\n        value: numericValue\n    },\n    {\n        room: topicParts[1],\n        sensor_type: sensorType,\n        device_id: reading.device_id,\n        unit: reading.unit\n    }\n];\n\nreturn msg;",
         "outputs": 1,
@@ -164,14 +164,14 @@
         "y": 260,
         "wires": [
             [
-                "44404efba24c6c32"
+                "9ee3bf1788650536"
             ]
         ]
     },
     {
-        "id": "44404efba24c6c32",
+        "id": "9ee3bf1788650536",
         "type": "influxdb out",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "influxdb": "bc97a93b45f67266",
         "name": "",
         "measurement": "sensor_reading",
@@ -187,9 +187,9 @@
         "wires": []
     },
     {
-        "id": "daa89ad559bbc129",
+        "id": "9e99fab0f1725473",
         "type": "function",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Format device state for InfluxDB",
         "func": "\nconst topicParts = msg.topic.split(\"/\");\n\n// Expected topic:\n// home/living_room/device/light/state\nif (\n    topicParts.length !== 5 ||\n    topicParts[2] !== \"device\" ||\n    topicParts[4] !== \"state\"\n) {\n    return null;\n}\n\nconst deviceName = topicParts[3];\nconst deviceState = msg.payload?.state;\n\nif (deviceState !== \"on\" && deviceState !== \"off\") {\n    return null;\n}\n\nmsg.payload = [\n    {\n        is_on: deviceState === \"on\" ? 1 : 0\n    },\n    {\n        room: topicParts[1],\n        device_name: deviceName,\n        device_id: msg.payload.device_id\n    }\n];\n\nreturn msg;",
         "outputs": 1,
@@ -202,14 +202,14 @@
         "y": 420,
         "wires": [
             [
-                "b0473a910312c79d"
+                "dc77047b79afdd90"
             ]
         ]
     },
     {
-        "id": "b0473a910312c79d",
+        "id": "dc77047b79afdd90",
         "type": "influxdb out",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "influxdb": "33fb8e37bc578de2",
         "name": "",
         "measurement": "device_state",
@@ -225,9 +225,9 @@
         "wires": []
     },
     {
-        "id": "7911253a43159fcc",
+        "id": "070b5feaba2ea4cf",
         "type": "mqtt in",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "",
         "topic": "home/+/status",
         "qos": "2",
@@ -241,14 +241,14 @@
         "y": 760,
         "wires": [
             [
-                "a0dbad69cf9fdf9d"
+                "51f91b5e48bab842"
             ]
         ]
     },
     {
-        "id": "a0dbad69cf9fdf9d",
+        "id": "51f91b5e48bab842",
         "type": "switch",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "",
         "property": "payload.status",
         "propertyType": "msg",
@@ -266,14 +266,14 @@
         "y": 760,
         "wires": [
             [
-                "b38b72163d7fa16d"
+                "0535c10969a2ce0c"
             ]
         ]
     },
     {
-        "id": "b38b72163d7fa16d",
+        "id": "0535c10969a2ce0c",
         "type": "function",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Create Offline Alert",
         "func": "\nmsg.payload = {\n    severity: \"warning\",\n    alert_type: \"device_offline\",\n    message: `Simulator offline: ${msg.topic}`,\n    timestamp: new Date().toISOString()\n};\n\nreturn msg;",
         "outputs": 1,
@@ -286,15 +286,15 @@
         "y": 760,
         "wires": [
             [
-                "d15342c6f68648c5",
-                "9468e363094913c1"
+                "9ee30fc7d2ea9f5f",
+                "789a4158417e344a"
             ]
         ]
     },
     {
-        "id": "d15342c6f68648c5",
+        "id": "9ee30fc7d2ea9f5f",
         "type": "debug",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Offline Alert Debug",
         "active": true,
         "tosidebar": true,
@@ -309,9 +309,9 @@
         "wires": []
     },
     {
-        "id": "9468e363094913c1",
+        "id": "789a4158417e344a",
         "type": "function",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Format alert for InfluxDB",
         "func": "\nconst alert = msg.payload;\nconst topicParts = msg.topic.split(\"/\");\n\nmsg.payload = [\n    {\n        message: alert.message\n    },\n    {\n        severity: alert.severity,\n        alert_type: alert.alert_type,\n        room: topicParts[1]\n    }\n];\n\nreturn msg;",
         "outputs": 1,
@@ -324,14 +324,14 @@
         "y": 880,
         "wires": [
             [
-                "e57bc66946b21fb1"
+                "a0fb08be6e820c0a"
             ]
         ]
     },
     {
-        "id": "e57bc66946b21fb1",
+        "id": "a0fb08be6e820c0a",
         "type": "influxdb out",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "influxdb": "bc97a93b45f67266",
         "name": "",
         "measurement": "alerts",
@@ -347,9 +347,9 @@
         "wires": []
     },
     {
-        "id": "879c08a88a11099c",
+        "id": "8d3592580a06fabe",
         "type": "function",
-        "z": "5e19ed0d7bbe1aa9",
+        "z": "8c3bdc4450404a78",
         "name": "Create high temperature alert",
         "func": "\nconst temperature = Number(msg.payload?.value);\n\nif (Number.isNaN(temperature)) {\n    return null;\n}\n\nconst wasHigh = context.get(\"temperatureHigh\") || false;\n\n// Create one alert when temperature crosses 28 °C.\nif (temperature >= 28 && !wasHigh) {\n    context.set(\"temperatureHigh\", true);\n\n    msg.payload = {\n        severity: \"warning\",\n        alert_type: \"high_temperature\",\n        message: `High temperature detected: ${temperature} °C`,\n        timestamp: new Date().toISOString()\n    };\n\n    return msg;\n}\n\n// Reset only after the room has cooled sufficiently.\nif (temperature <= 27 && wasHigh) {\n    context.set(\"temperatureHigh\", false);\n}\n\nreturn null;",
         "outputs": 1,
@@ -362,7 +362,7 @@
         "y": 900,
         "wires": [
             [
-                "9468e363094913c1"
+                "789a4158417e344a"
             ]
         ]
     },
@@ -552,7 +552,7 @@
         "sessionExpiry": ""
     },
     {
-        "id": "005d03e54d25efd1",
+        "id": "432331aee045f254",
         "type": "global-config",
         "env": [],
         "modules": {
